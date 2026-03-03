@@ -30,23 +30,16 @@ describe("QualifyRequestSchema", () => {
     expect(result.success).toBe(true);
   });
 
-  it("should accept request with parentRunId", () => {
+  it("regression: should not accept parentRunId in body (moved to x-run-id header)", () => {
     const result = QualifyRequestSchema.safeParse({
       ...validBase,
       parentRunId: "550e8400-e29b-41d4-a716-446655440000",
     });
+    // parentRunId is stripped by Zod (not in schema), request still valid
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.parentRunId).toBe("550e8400-e29b-41d4-a716-446655440000");
+      expect((result.data as any).parentRunId).toBeUndefined();
     }
-  });
-
-  it("regression: should reject non-UUID parentRunId", () => {
-    const result = QualifyRequestSchema.safeParse({
-      ...validBase,
-      parentRunId: "not-a-uuid",
-    });
-    expect(result.success).toBe(false);
   });
 
   it("regression: should not accept appId (removed)", () => {

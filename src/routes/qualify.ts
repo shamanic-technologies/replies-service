@@ -31,8 +31,9 @@ router.post("/qualify", serviceAuth, async (req: AuthenticatedRequest, res) => {
     const body = parsed.data;
     const orgId = req.orgId!;
     const userId = req.userId!;
+    const callerRunId = req.runId!;
 
-    // Create a run in RunsService
+    // Create a run in RunsService (caller's runId becomes parentRunId)
     let serviceRunId: string | null = null;
     try {
       const run = await createRun({
@@ -40,7 +41,7 @@ router.post("/qualify", serviceAuth, async (req: AuthenticatedRequest, res) => {
         userId,
         brandId: body.brandId,
         campaignId: body.campaignId,
-        parentRunId: body.parentRunId,
+        parentRunId: callerRunId,
       });
       serviceRunId = run.id;
     } catch (err) {
@@ -58,7 +59,7 @@ router.post("/qualify", serviceAuth, async (req: AuthenticatedRequest, res) => {
         userId,
         brandId: body.brandId,
         campaignId: body.campaignId,
-        runId: body.parentRunId,
+        runId: callerRunId,
         serviceRunId,
         fromEmail: body.fromEmail,
         toEmail: body.toEmail,
