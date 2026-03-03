@@ -6,6 +6,8 @@ export interface AuthenticatedRequest extends Request {
   orgId?: string;
   /** Set by serviceAuth middleware — always present after auth */
   userId?: string;
+  /** Set by serviceAuth middleware — always present after auth */
+  runId?: string;
 }
 
 /**
@@ -40,8 +42,15 @@ export function serviceAuth(
     return res.status(400).json({ error: "Missing x-user-id header" });
   }
 
+  const runId = req.headers["x-run-id"] as string;
+
+  if (!runId) {
+    return res.status(400).json({ error: "Missing x-run-id header" });
+  }
+
   req.orgId = orgId;
   req.userId = userId;
+  req.runId = runId;
   req.sourceService = req.headers["x-source-service"] as string;
 
   next();

@@ -11,6 +11,7 @@ All authenticated endpoints require these headers:
 | `X-API-Key` | Yes | Service-to-service API key |
 | `x-org-id` | Yes | Internal org UUID from client-service |
 | `x-user-id` | Yes | Internal user UUID from client-service |
+| `x-run-id` | Yes | Caller's run ID (used as parentRunId when creating this service's own run) |
 
 ### `POST /qualify`
 
@@ -33,7 +34,6 @@ Classify an email reply. Stores the request, runs AI classification, returns the
 | `webhookUrl` | No | Callback URL for async notification |
 | `brandId` | No | Brand identifier |
 | `campaignId` | No | Campaign identifier |
-| `parentRunId` | No | Parent run UUID (linked in RunsService) |
 
 **Response:**
 
@@ -165,10 +165,11 @@ No raw API keys are sent in request bodies. No `appId` or `keySource` fields are
 
 ## Auth
 
-Service-to-service authentication requires three headers:
+Service-to-service authentication requires four headers:
 - `X-API-Key` — service API key
 - `x-org-id` — internal org UUID (from client-service)
 - `x-user-id` — internal user UUID (from client-service)
+- `x-run-id` — caller's run ID (used as parentRunId when creating this service's own run in runs-service)
 
 Optionally pass `X-Source-Service` to identify the calling service.
 

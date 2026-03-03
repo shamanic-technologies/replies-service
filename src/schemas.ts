@@ -66,7 +66,6 @@ export const QualifyRequestSchema = z
     sourceRefId: z.string().optional(),
     brandId: z.string().optional(),
     campaignId: z.string().optional(),
-    parentRunId: z.string().uuid().optional(),
     fromEmail: z.string().email(),
     toEmail: z.string().email(),
     subject: z.string().optional(),

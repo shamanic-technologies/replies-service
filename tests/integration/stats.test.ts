@@ -132,4 +132,16 @@ describe("GET /stats", () => {
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/x-org-id/i);
   });
+
+  it("should require x-run-id header", async () => {
+    const res = await request(app)
+      .get("/stats?orgId=org_A")
+      .set({
+        "X-API-Key": process.env.REPLY_QUALIFICATION_SERVICE_API_KEY || "test-api-key",
+        "x-org-id": "test-org-id",
+        "x-user-id": "test-user-id",
+      });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/x-run-id/i);
+  });
 });
