@@ -5,6 +5,6 @@ export default defineConfig({
   out: "./drizzle",
   dialect: "postgresql",
   dbCredentials: {
-    url: process.env.REPLY_QUALIFICATION_SERVICE_DATABASE_URL!,
+    url: process.env.REPLIES_SERVICE_DATABASE_URL!,
   },
 });

@@ -1,220 +1,143 @@
-# Reply Qualification Service
+# Replies Service
 
-AI-powered email reply classification service. Analyzes incoming email replies to sales/outreach campaigns using Claude AI and classifies them into actionable categories.
+Persists journalist replies for outreach campaigns. Each row captures a snapshot of a reply (auto-classified from inbound webhooks or manually entered from the dashboard). The latest row per `(journalist_id, campaign_id)` represents the current effective status; history is preserved as additional rows.
 
 ## API Endpoints
 
-All authenticated endpoints require these headers:
+All `/orgs/*` endpoints require:
 
 | Header | Required | Description |
 |---|---|---|
 | `X-API-Key` | Yes | Service-to-service API key |
-| `x-org-id` | Yes | Internal org UUID from client-service |
-| `x-user-id` | Yes | Internal user UUID from client-service |
-| `x-run-id` | Yes | Caller's run ID (used as parentRunId when creating this service's own run) |
+| `x-org-id` | Yes | Internal org UUID (from client-service) |
+| `x-user-id` | No | Internal user UUID. Used as `setByUserId` when `source=manual` |
+| `x-run-id` | No | Caller's run ID. Stored as `parent_run_id` |
+| `x-brand-id` | No | Brand UUID(s) |
+| `x-campaign-id` | No | Campaign UUID |
+| `x-feature-slug` | No | Feature identifier |
+| `x-workflow-slug` | No | Workflow identifier |
 
-### `POST /qualify`
+The service creates its own run via runs-service for every authenticated request, stored as `run_id`.
 
-Classify an email reply. Stores the request, runs AI classification, returns the result synchronously.
+### `POST /orgs/journalist-replies`
 
-**Request body:**
+Create a new reply row.
 
-| Field | Required | Description |
-|---|---|---|
-| `sourceService` | Yes | Service name (`mcpfactory`, `pressbeat`, etc.) |
-| `sourceOrgId` | Yes | Source organization identifier |
-| `sourceRefId` | No | Campaign run ID, pitch ID, etc. |
-| `fromEmail` | Yes | Sender email address |
-| `toEmail` | Yes | Recipient email address |
-| `subject` | No | Email subject line |
-| `bodyText` | No | Plain text email body |
-| `bodyHtml` | No | HTML email body (stripped if no bodyText) |
-| `inReplyToMessageId` | No | Original message ID for threading |
-| `emailReceivedAt` | No | ISO 8601 timestamp |
-| `webhookUrl` | No | Callback URL for async notification |
-| `brandId` | No | Brand identifier |
-| `campaignId` | No | Campaign identifier |
-
-**Response:**
+**Body:**
 
 ```json
 {
-  "id": "uuid",
-  "requestId": "uuid",
-  "classification": "willing_to_meet",
-  "confidence": 0.95,
-  "reasoning": "The person explicitly asked to schedule a call",
-  "suggestedAction": "forward_to_client",
-  "extractedDetails": { "meeting_preference": "Tuesday afternoon" },
-  "costUsd": 0.000123,
-  "keySource": "platform",
-  "serviceRunId": "uuid-or-null",
-  "createdAt": "2025-01-01T00:00:00.000Z"
+  "journalistId": "j_123",
+  "campaignId": "c_123",
+  "brandId": "b_123",
+  "status": "positive_for_earned",
+  "source": "manual",
+  "note": "optional",
+  "publicationUrl": "https://example.com/article",
+  "fromEmail": "journalist@outlet.com",
+  "toEmail": "outreach@brand.com",
+  "subject": "Re: pitch",
+  "bodyText": "...",
+  "bodyHtml": "...",
+  "inReplyToMessageId": "<...>",
+  "emailReceivedAt": "2026-05-08T12:00:00Z"
 }
 ```
 
-### `GET /qualifications/:id`
+`setByUserId` is automatically derived from `x-user-id` when `source=manual`.
 
-Fetch a specific qualification result by ID.
+**Response:** `201 Created` with the persisted row.
 
-### `GET /qualifications`
+### `GET /orgs/journalist-replies/current?journalistId=&campaignId=`
 
-List qualifications with optional filters: `sourceService`, `sourceOrgId`, `sourceRefId`, `limit` (default 50).
+Returns the latest row for the (journalist, campaign) pair, scoped to `org_id`. `404` if none.
 
-### `GET /stats`
+### `GET /orgs/journalist-replies?journalistId=&campaignId=`
 
-Aggregated qualification statistics. **At least one filter parameter is required** to prevent unscoped global queries.
+Returns the full history (DESC by `created_at`), scoped to `org_id`.
 
-**Query parameters (at least one required):**
+### `PATCH /orgs/journalist-replies/:id`
 
-| Param | Description |
-|---|---|
-| `orgId` | Filter by organization identifier |
-| `userId` | Filter by user identifier |
-| `brandId` | Filter by brand identifier |
-| `campaignId` | Filter by campaign identifier |
-| `runId` | Filter by run identifier |
+Correct an existing row. Only allowed when `source=manual`.
 
-**Response:**
+**Body:** `{ status?, note?, publicationUrl? }`.
 
-```json
-{
-  "total": 1234,
-  "byClassification": {
-    "willing_to_meet": 45,
-    "interested": 200,
-    "not_interested": 500
-  },
-  "totalCostUsd": 1.234567,
-  "totalInputTokens": 500000,
-  "totalOutputTokens": 125000
-}
-```
+- `404` when the row does not belong to the caller's org.
+- `409` when the row's `source = auto`.
 
 ### `GET /openapi.json`
 
-Returns the OpenAPI 3.0 spec for this service. No auth required. The spec is generated at build time from Zod schemas via `@asteasolutions/zod-to-openapi`.
+OpenAPI 3.0 spec. No auth.
 
-### `GET /health`
+### `GET /health` / `GET /health/debug`
 
-Basic health check. No auth required.
+No auth.
 
-### `GET /health/debug`
+## Reply statuses
 
-Debug endpoint showing env var status and DB connection. No auth required.
-
-## Classifications
-
-| Classification | Description |
+| Status | Meaning |
 |---|---|
-| `willing_to_meet` | Wants to schedule a meeting or call |
-| `interested` | Positive response, open to discussion |
-| `needs_more_info` | Curious but needs clarification |
+| `positive_for_earned` | Open to earned coverage |
+| `positive_for_paid` | Open to paid placement |
+| `earned_publication_confirmed` | Earned article published |
+| `paid_publication_confirmed` | Paid article published |
+| `more_info_asked` | Wants additional details |
 | `not_interested` | Polite decline |
-| `out_of_office` | Auto-reply, vacation |
-| `unsubscribe` | Wants to be removed |
-| `bounce` | Email delivery failure |
+| `unsubscribe` | Wants removal |
+| `out_of_office` | Auto-reply |
+| `bounced` | Email delivery failure |
 | `other` | Uncategorized |
 
 ## Setup
 
 ```bash
 npm install
-cp .env.example .env  # Fill in values
+cp .env.example .env  # fill in values
 npm run dev
 ```
 
-## Environment Variables
+## Environment variables
 
 | Variable | Description |
 |---|---|
-| `REPLY_QUALIFICATION_SERVICE_DATABASE_URL` | Neon PostgreSQL connection string |
-| `KEY_SERVICE_URL` | Key-service base URL (default: `https://keys.mcpfactory.org`) |
-| `KEY_SERVICE_API_KEY` | API key for key-service |
-| `REPLY_QUALIFICATION_SERVICE_API_KEY` | Service-to-service auth key |
-| `RUNS_SERVICE_URL` | RunsService base URL (default: `https://runs.mcpfactory.org`) |
-| `RUNS_SERVICE_API_KEY` | API key for RunsService |
-| `SERVICE_URL` | Public URL for OpenAPI spec (e.g. `https://reply-qualification.mcpfactory.org`) |
-| `PORT` | Server port (default: 3000) |
+| `REPLIES_SERVICE_DATABASE_URL` | Neon Postgres connection string |
+| `REPLIES_SERVICE_API_KEY` | Service-to-service auth key (crashes at startup if absent) |
+| `RUNS_SERVICE_URL` | Runs-service base URL (default `https://runs.mcpfactory.org`) |
+| `RUNS_SERVICE_API_KEY` | Runs-service API key |
+| `SERVICE_URL` | Public URL injected into OpenAPI servers |
+| `PORT` | Server port (default `3000`) |
 
 ## Database
 
-Uses Drizzle ORM with PostgreSQL (Neon). Migrations run automatically on startup.
-
-**Tables:** `qualification_requests`, `qualifications`, `webhook_callbacks`
-
-Run tracking and cost logging are delegated to [RunsService](https://runs.mcpfactory.org) — the `serviceRunId` column in `qualification_requests` links back to the external run.
+Single table `journalist_replies` with two enums: `journalist_reply_status`, `journalist_reply_source`. Migrations run automatically on startup via `drizzle-orm/postgres-js/migrator`.
 
 ```bash
-npm run db:generate   # Generate migrations from schema changes
-npm run db:migrate    # Run migrations
-npm run db:studio     # Open Drizzle Studio
+npm run db:generate   # generate migration from schema diff
+npm run db:migrate    # apply pending migrations
+npm run db:push       # push schema directly (skip migrations)
+npm run db:studio     # open Drizzle Studio
 ```
-
-## Key Resolution
-
-API keys are resolved automatically through key-service at runtime:
-
-```
-GET /keys/anthropic/decrypt?orgId=<orgId>&userId=<userId>
-```
-
-key-service auto-resolves whether to use the org's own key or the platform key based on the org's preference. The response includes a `keySource` field (`"platform"` or `"org"`) indicating which key was used. This `keySource` value is passed as `costSource` when declaring costs to runs-service.
-
-No raw API keys are sent in request bodies. No `appId` or `keySource` fields are needed in requests.
-
-## Auth
-
-Service-to-service authentication requires four headers:
-- `X-API-Key` — service API key
-- `x-org-id` — internal org UUID (from client-service)
-- `x-user-id` — internal user UUID (from client-service)
-- `x-run-id` — caller's run ID (used as parentRunId when creating this service's own run in runs-service)
-
-Optionally pass `X-Source-Service` to identify the calling service.
-
-## AI Model
-
-Uses Claude 3 Haiku (`claude-3-haiku-20240307`) for cost-effective classification. Pricing: $0.25/1M input tokens, $1.25/1M output tokens.
 
 ## Testing
 
 ```bash
-npm test              # All tests
-npm run test:unit     # Unit tests only
-npm run test:integration  # Integration tests (needs DB)
+npm test                  # all
+npm run test:unit         # unit only (no DB)
+npm run test:integration  # integration (needs DB)
 ```
 
-## Docker
+Integration tests run against a Neon branch in CI (`pr-<number>`). Locally, point `REPLIES_SERVICE_DATABASE_URL` at any Postgres and run `drizzle-kit push --force`.
 
-```bash
-docker build -t reply-qualification-service .
-docker run -p 3000:3000 --env-file .env reply-qualification-service
-```
+## Tech stack
 
-## Scripts
+- Node 20, TypeScript strict
+- Express 4
+- Drizzle ORM + Postgres (Neon)
+- Vitest + Supertest
+- Zod + `@asteasolutions/zod-to-openapi`
+- runs-service for run lifecycle + cost tracking
 
-| Script | Description |
-|---|---|
-| `npm run dev` | Start dev server with hot reload |
-| `npm run build` | Compile TypeScript + generate OpenAPI spec |
-| `npm start` | Run compiled output |
-| `npm test` | Run all tests |
-| `npm run test:unit` | Run unit tests |
-| `npm run test:integration` | Run integration tests |
-| `npm run generate:openapi` | Generate OpenAPI spec |
-| `npm run db:generate` | Generate DB migrations |
-| `npm run db:migrate` | Run DB migrations |
-| `npm run db:push` | Push schema directly to DB |
-| `npm run db:studio` | Open Drizzle Studio |
+## Out of scope (future work)
 
-## Tech Stack
-
-- **Runtime:** Node 20, TypeScript (strict mode)
-- **Framework:** Express 4
-- **ORM:** Drizzle ORM + PostgreSQL (Neon)
-- **AI:** Anthropic Claude 3 Haiku (keys resolved via key-service)
-- **Key Management:** key-service (auto-resolves org vs platform keys)
-- **Testing:** Vitest + Supertest
-- **Validation:** Zod + `@asteasolutions/zod-to-openapi`
-- **CI:** GitHub Actions (unit + integration tests on push/PR to main)
+- Inbound webhook handler that creates `source=auto` rows from email providers (Postmark/Instantly).
+- API-service proxy endpoint so the dashboard can call this service indirectly.

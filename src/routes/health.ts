@@ -7,16 +7,16 @@ const router = Router();
 router.get("/health", (_req, res) => {
   res.json({
     status: "ok",
-    service: "reply-qualification-service",
+    service: "replies-service",
     timestamp: new Date().toISOString(),
   });
 });
 
 router.get("/health/debug", async (_req, res) => {
-  const apiKey = process.env.REPLY_QUALIFICATION_SERVICE_API_KEY;
-  const keyServiceUrl = process.env.KEY_SERVICE_URL;
-  const keyServiceApiKey = process.env.KEY_SERVICE_API_KEY;
-  const dbUrl = process.env.REPLY_QUALIFICATION_SERVICE_DATABASE_URL;
+  const apiKey = process.env.REPLIES_SERVICE_API_KEY;
+  const dbUrl = process.env.REPLIES_SERVICE_DATABASE_URL;
+  const runsServiceConfigured =
+    !!process.env.RUNS_SERVICE_URL && !!process.env.RUNS_SERVICE_API_KEY;
 
   let dbStatus = "unknown";
   try {
@@ -30,9 +30,9 @@ router.get("/health/debug", async (_req, res) => {
     apiKeyConfigured: !!apiKey,
     apiKeyLength: apiKey?.length || 0,
     apiKeyPrefix: apiKey?.substring(0, 4) || "none",
-    keyServiceConfigured: !!keyServiceUrl && !!keyServiceApiKey,
     dbUrlConfigured: !!dbUrl,
     dbStatus,
+    runsServiceConfigured,
   });
 });
 
