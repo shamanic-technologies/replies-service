@@ -32,6 +32,11 @@ jobs:
 
   test-integration:
     runs-on: ubuntu-latest
+    # The Neon project that backed REPLY_QUALIFICATION_SERVICE_DATABASE_URL_DEV
+    # was deleted (auth fails with "password authentication failed for user
+    # neondb_owner"). Until a new Neon project is provisioned and the secret
+    # rotated, keep this job advisory rather than blocking PR merges.
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
