@@ -1,57 +1,101 @@
 import { Request, Response, NextFunction } from "express";
+import { createRun, updateRunStatus } from "../lib/runs-service.js";
 
 export interface AuthenticatedRequest extends Request {
-  sourceService?: string;
-  /** Set by serviceAuth middleware — always present after auth */
-  orgId?: string;
-  /** Set by serviceAuth middleware — always present after auth */
-  userId?: string;
-  /** Set by serviceAuth middleware — always present after auth */
+  /** Caller's run ID from inbound x-run-id header. */
+  parentRunId?: string;
+  /** This service's own run ID, created by middleware. */
   runId?: string;
+  orgId?: string;
+  userId?: string;
+  brandId?: string;
+  campaignId?: string;
+  featureSlug?: string;
+  workflowSlug?: string;
 }
 
 /**
- * Service-to-service authentication via API key.
- * Also requires x-org-id and x-user-id identity headers.
+ * API key auth. Crashes at startup if REPLIES_SERVICE_API_KEY env is missing.
  */
-export function serviceAuth(
+const REPLIES_SERVICE_API_KEY = process.env.REPLIES_SERVICE_API_KEY;
+if (!REPLIES_SERVICE_API_KEY && process.env.NODE_ENV !== "test") {
+  // Test setup intentionally injects the key; production must crash.
+  throw new Error("REPLIES_SERVICE_API_KEY env var is required");
+}
+
+export function apiKeyAuth(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void {
+  const apiKey = req.headers["x-api-key"] as string | undefined;
+  const validKey = process.env.REPLIES_SERVICE_API_KEY;
+
+  if (!validKey) {
+    res.status(500).json({ error: "Service misconfigured: missing API key env" });
+    return;
+  }
+
+  if (!apiKey || apiKey !== validKey) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+
+  next();
+}
+
+/**
+ * Reads identity headers (only x-org-id required), creates a run via runs-service,
+ * and registers a response-finish hook to close the run.
+ */
+export function requireOrgId(
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
-) {
-  const apiKey = req.headers["x-api-key"] as string;
-
-  if (!apiKey) {
-    return res.status(401).json({ error: "Missing X-API-Key header" });
-  }
-
-  const validKey = process.env.REPLY_QUALIFICATION_SERVICE_API_KEY;
-
-  if (!validKey || apiKey !== validKey) {
-    return res.status(401).json({ error: "Invalid API key" });
-  }
-
-  const orgId = req.headers["x-org-id"] as string;
-  const userId = req.headers["x-user-id"] as string;
-
+): void {
+  const orgId = req.headers["x-org-id"] as string | undefined;
   if (!orgId) {
-    return res.status(400).json({ error: "Missing x-org-id header" });
-  }
-
-  if (!userId) {
-    return res.status(400).json({ error: "Missing x-user-id header" });
-  }
-
-  const runId = req.headers["x-run-id"] as string;
-
-  if (!runId) {
-    return res.status(400).json({ error: "Missing x-run-id header" });
+    res.status(400).json({ error: "Missing x-org-id header" });
+    return;
   }
 
   req.orgId = orgId;
-  req.userId = userId;
-  req.runId = runId;
-  req.sourceService = req.headers["x-source-service"] as string;
+  req.userId = (req.headers["x-user-id"] as string) || undefined;
+  req.parentRunId = (req.headers["x-run-id"] as string) || undefined;
+  req.brandId = (req.headers["x-brand-id"] as string) || undefined;
+  req.campaignId = (req.headers["x-campaign-id"] as string) || undefined;
+  req.featureSlug = (req.headers["x-feature-slug"] as string) || undefined;
+  req.workflowSlug = (req.headers["x-workflow-slug"] as string) || undefined;
 
-  next();
+  // Create own run. Must succeed — fail loud per service-architecture.
+  createRun({
+    orgId: req.orgId,
+    userId: req.userId,
+    brandId: req.brandId,
+    campaignId: req.campaignId,
+    parentRunId: req.parentRunId,
+    metadata: {
+      route: req.path,
+      method: req.method,
+      featureSlug: req.featureSlug,
+      workflowSlug: req.workflowSlug,
+    },
+  })
+    .then((run) => {
+      req.runId = run.id;
+
+      res.on("finish", () => {
+        const status: "completed" | "failed" =
+          res.statusCode >= 400 ? "failed" : "completed";
+        updateRunStatus(run.id, status).catch((err) => {
+          console.error("[replies-service] updateRunStatus failed:", err);
+        });
+      });
+
+      next();
+    })
+    .catch((err) => {
+      console.error("[replies-service] runs-service createRun failed:", err);
+      res.status(502).json({ error: "Failed to create run in runs-service" });
+    });
 }

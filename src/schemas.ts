@@ -17,24 +17,26 @@ registry.registerComponent("securitySchemes", "apiKey", {
   description: "Service-to-service API key",
 });
 
-// --- Shared enums ---
+// --- Enums ---
 
-export const CostSourceSchema = z
-  .enum(["platform", "org"])
-  .openapi("CostSource");
-
-export const ClassificationSchema = z
+export const JournalistReplyStatusSchema = z
   .enum([
-    "willing_to_meet",
-    "interested",
-    "needs_more_info",
+    "positive_for_earned",
+    "positive_for_paid",
+    "earned_publication_confirmed",
+    "paid_publication_confirmed",
+    "more_info_asked",
     "not_interested",
-    "out_of_office",
     "unsubscribe",
-    "bounce",
+    "out_of_office",
+    "bounced",
     "other",
   ])
-  .openapi("Classification");
+  .openapi("JournalistReplyStatus");
+
+export const JournalistReplySourceSchema = z
+  .enum(["auto", "manual"])
+  .openapi("JournalistReplySource");
 
 // --- Health schemas ---
 
@@ -51,102 +53,77 @@ export const HealthDebugResponseSchema = z
     apiKeyConfigured: z.boolean(),
     apiKeyLength: z.number(),
     apiKeyPrefix: z.string(),
-    keyServiceConfigured: z.boolean(),
     dbUrlConfigured: z.boolean(),
     dbStatus: z.string(),
+    runsServiceConfigured: z.boolean(),
   })
   .openapi("HealthDebugResponse");
 
-// --- Qualification schemas ---
+// --- Journalist reply schemas ---
 
-export const QualifyRequestSchema = z
+export const CreateJournalistReplySchema = z
   .object({
-    sourceService: z.string().min(1),
-    sourceOrgId: z.string().min(1),
-    sourceRefId: z.string().optional(),
-    brandId: z.string().optional(),
-    campaignId: z.string().optional(),
-    fromEmail: z.string().email(),
-    toEmail: z.string().email(),
+    journalistId: z.string().min(1),
+    campaignId: z.string().min(1),
+    brandId: z.string().min(1),
+    status: JournalistReplyStatusSchema,
+    source: JournalistReplySourceSchema,
+    note: z.string().optional(),
+    publicationUrl: z.string().url().optional(),
+    fromEmail: z.string().email().optional(),
+    toEmail: z.string().email().optional(),
     subject: z.string().optional(),
     bodyText: z.string().optional(),
     bodyHtml: z.string().optional(),
     inReplyToMessageId: z.string().optional(),
-    emailReceivedAt: z.string().optional(),
-    webhookUrl: z.string().url().optional(),
+    emailReceivedAt: z.string().datetime().optional(),
   })
-  .openapi("QualifyRequest");
+  .openapi("CreateJournalistReplyRequest");
 
-export const QualifyResponseSchema = z
+export const PatchJournalistReplySchema = z
+  .object({
+    status: JournalistReplyStatusSchema.optional(),
+    note: z.string().optional(),
+    publicationUrl: z.string().url().optional(),
+  })
+  .openapi("PatchJournalistReplyRequest");
+
+export const JournalistReplyResponseSchema = z
   .object({
     id: z.string().uuid(),
-    requestId: z.string().uuid(),
-    classification: ClassificationSchema,
-    confidence: z.number().min(0).max(1),
-    reasoning: z.string().nullable(),
-    suggestedAction: z.string().nullable(),
-    extractedDetails: z.record(z.string(), z.unknown()).nullable(),
-    costUsd: z.number(),
-    keySource: CostSourceSchema.optional(),
-    serviceRunId: z.string().uuid().nullable().optional(),
-    createdAt: z.string().or(z.date()),
-  })
-  .openapi("QualifyResponse");
-
-export const QualificationItemSchema = z
-  .object({
-    id: z.string().uuid(),
-    requestId: z.string().uuid(),
-    sourceService: z.string(),
-    sourceOrgId: z.string(),
-    sourceRefId: z.string().nullable(),
-    fromEmail: z.string(),
+    journalistId: z.string(),
+    campaignId: z.string(),
+    brandId: z.string(),
+    orgId: z.string(),
+    userId: z.string().nullable(),
+    parentRunId: z.string().nullable(),
+    runId: z.string().nullable(),
+    status: JournalistReplyStatusSchema,
+    source: JournalistReplySourceSchema,
+    setByUserId: z.string().nullable(),
+    note: z.string().nullable(),
+    fromEmail: z.string().nullable(),
+    toEmail: z.string().nullable(),
     subject: z.string().nullable(),
-    classification: ClassificationSchema,
-    confidence: z.number(),
-    suggestedAction: z.string().nullable(),
-    createdAt: z.string().or(z.date()),
+    bodyText: z.string().nullable(),
+    bodyHtml: z.string().nullable(),
+    inReplyToMessageId: z.string().nullable(),
+    emailReceivedAt: z.string().nullable(),
+    publicationUrl: z.string().nullable(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
   })
-  .openapi("QualificationItem");
+  .openapi("JournalistReplyResponse");
 
-export const QualificationsQuerySchema = z.object({
-  sourceService: z.string().optional(),
-  sourceOrgId: z.string().optional(),
-  sourceRefId: z.string().optional(),
-  limit: z.string().regex(/^\d+$/).optional(),
+export const JournalistRepliesQuerySchema = z.object({
+  journalistId: z.string().min(1),
+  campaignId: z.string().min(1),
 });
 
-// --- Stats schemas ---
-
-export const StatsQuerySchema = z.object({
-  orgId: z.string().optional(),
-  userId: z.string().optional(),
-  brandId: z.string().optional(),
-  campaignId: z.string().optional(),
-  runId: z.string().optional(),
-});
-
-export const StatsResponseSchema = z
-  .object({
-    total: z.number(),
-    byClassification: z.record(z.string(), z.number()),
-    totalCostUsd: z.number(),
-    totalInputTokens: z.number(),
-    totalOutputTokens: z.number(),
-  })
-  .openapi("StatsResponse");
-
-export const ErrorSchema = z
-  .object({
-    error: z.string(),
-  })
-  .openapi("Error");
+export const ErrorSchema = z.object({ error: z.string() }).openapi("Error");
 
 export const ValidationErrorSchema = z
-  .object({
-    error: z.string(),
-    details: z.any(),
-  })
+  .object({ error: z.string(), details: z.any() })
   .openapi("ValidationError");
 
 // --- Register paths ---
@@ -156,7 +133,6 @@ registry.registerPath({
   path: "/health",
   tags: ["Health"],
   summary: "Health check",
-  description: "Basic health check endpoint",
   responses: {
     200: {
       description: "Service is healthy",
@@ -170,7 +146,6 @@ registry.registerPath({
   path: "/health/debug",
   tags: ["Health"],
   summary: "Debug health check",
-  description: "Shows env var configuration status and DB connection",
   responses: {
     200: {
       description: "Debug info",
@@ -181,58 +156,45 @@ registry.registerPath({
 
 registry.registerPath({
   method: "post",
-  path: "/qualify",
-  tags: ["Qualification"],
-  summary: "Qualify an email reply",
+  path: "/orgs/journalist-replies",
+  tags: ["JournalistReplies"],
+  summary: "Create a journalist reply row",
   description:
-    "Stores the request, runs AI classification with Claude, and returns the result synchronously.",
+    "Creates a new row capturing a journalist reply. Latest row per (journalist_id, campaign_id) = current effective status. setByUserId is derived from x-user-id when source=manual.",
   security: [{ apiKey: [] }],
   request: {
     body: {
       required: true,
-      content: { "application/json": { schema: QualifyRequestSchema } },
+      content: { "application/json": { schema: CreateJournalistReplySchema } },
     },
   },
   responses: {
-    200: {
-      description: "Qualification result",
-      content: { "application/json": { schema: QualifyResponseSchema } },
+    201: {
+      description: "Created",
+      content: { "application/json": { schema: JournalistReplyResponseSchema } },
     },
     400: {
       description: "Invalid request body",
       content: { "application/json": { schema: ValidationErrorSchema } },
     },
-    401: { description: "Unauthorized - invalid or missing API key" },
-    500: {
-      description: "Internal server error",
-      content: { "application/json": { schema: ErrorSchema } },
-    },
+    401: { description: "Unauthorized" },
   },
 });
 
 registry.registerPath({
   method: "get",
-  path: "/qualifications/{id}",
-
-  tags: ["Qualification"],
-  summary: "Get a qualification by ID",
-  description: "Fetch a specific qualification result by its UUID.",
+  path: "/orgs/journalist-replies/current",
+  tags: ["JournalistReplies"],
+  summary: "Get latest reply row for a (journalist, campaign) pair",
   security: [{ apiKey: [] }],
-  request: {
-    params: z.object({ id: z.string().uuid() }),
-  },
+  request: { query: JournalistRepliesQuerySchema },
   responses: {
     200: {
-      description: "Qualification found",
-      content: { "application/json": { schema: QualifyResponseSchema } },
+      description: "Latest row",
+      content: { "application/json": { schema: JournalistReplyResponseSchema } },
     },
-    401: { description: "Unauthorized - invalid or missing API key" },
     404: {
-      description: "Qualification not found",
-      content: { "application/json": { schema: ErrorSchema } },
-    },
-    500: {
-      description: "Internal server error",
+      description: "Not found",
       content: { "application/json": { schema: ErrorSchema } },
     },
   },
@@ -240,54 +202,48 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
-  path: "/qualifications",
-  tags: ["Qualification"],
-  summary: "List qualifications",
-  description: "List qualifications with optional filters.",
+  path: "/orgs/journalist-replies",
+  tags: ["JournalistReplies"],
+  summary: "List reply history (DESC by created_at)",
   security: [{ apiKey: [] }],
-  request: {
-    query: QualificationsQuerySchema,
-  },
+  request: { query: JournalistRepliesQuerySchema },
   responses: {
     200: {
-      description: "List of qualifications",
+      description: "History",
       content: {
         "application/json": {
-          schema: z.array(QualificationItemSchema),
+          schema: z.array(JournalistReplyResponseSchema),
         },
       },
     },
-    401: { description: "Unauthorized - invalid or missing API key" },
-    500: {
-      description: "Internal server error",
-      content: { "application/json": { schema: ErrorSchema } },
-    },
   },
 });
 
 registry.registerPath({
-  method: "get",
-  path: "/stats",
-  tags: ["Stats"],
-  summary: "Aggregated qualification statistics",
-  description:
-    "Returns qualification counts by classification. At least one filter parameter is required.",
+  method: "patch",
+  path: "/orgs/journalist-replies/{id}",
+  tags: ["JournalistReplies"],
+  summary: "Update a manual reply row",
+  description: "Only allowed when source=manual. Returns 409 on auto-source rows.",
   security: [{ apiKey: [] }],
   request: {
-    query: StatsQuerySchema,
+    params: z.object({ id: z.string().uuid() }),
+    body: {
+      required: true,
+      content: { "application/json": { schema: PatchJournalistReplySchema } },
+    },
   },
   responses: {
     200: {
-      description: "Aggregation result",
-      content: { "application/json": { schema: StatsResponseSchema } },
+      description: "Updated",
+      content: { "application/json": { schema: JournalistReplyResponseSchema } },
     },
-    400: {
-      description: "At least one filter parameter is required",
-      content: { "application/json": { schema: ValidationErrorSchema } },
+    404: {
+      description: "Not found",
+      content: { "application/json": { schema: ErrorSchema } },
     },
-    401: { description: "Unauthorized - invalid or missing API key" },
-    500: {
-      description: "Internal server error",
+    409: {
+      description: "Cannot patch auto-source row",
       content: { "application/json": { schema: ErrorSchema } },
     },
   },
@@ -298,7 +254,6 @@ registry.registerPath({
   path: "/openapi.json",
   tags: ["Meta"],
   summary: "OpenAPI specification",
-  description: "Returns the OpenAPI 3.0 spec for this service.",
   responses: {
     200: { description: "OpenAPI JSON document" },
     404: {

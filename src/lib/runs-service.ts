@@ -22,19 +22,18 @@ async function runsApiFetch<T>(
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`RunsService ${method} ${path} failed (${res.status}): ${text}`);
+    throw new Error(
+      `[replies-service] runs-service ${method} ${path} failed (${res.status}): ${text}`
+    );
   }
 
   return res.json() as Promise<T>;
 }
 
-// --- Types ---
-
 export interface RunsServiceRun {
   id: string;
   organizationId: string;
   userId: string | null;
-  appId: string;
   brandId: string | null;
   campaignId: string | null;
   serviceName: string;
@@ -47,26 +46,13 @@ export interface RunsServiceRun {
   updatedAt: string;
 }
 
-export interface RunsServiceCost {
-  id: string;
-  runId: string;
-  costName: string;
-  costSource: "platform" | "org";
-  quantity: string;
-  unitCostInUsdCents: string;
-  totalCostInUsdCents: string;
-  status: string;
-  createdAt: string;
-}
-
-// --- API functions ---
-
 export interface CreateRunParams {
   orgId: string;
-  userId: string;
+  userId?: string;
   brandId?: string;
   campaignId?: string;
   parentRunId?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export async function createRun(
@@ -74,25 +60,14 @@ export async function createRun(
 ): Promise<RunsServiceRun> {
   return runsApiFetch<RunsServiceRun>("POST", "/v1/runs", {
     orgId: params.orgId,
-    userId: params.userId,
-    appId: "reply-qualification-service",
+    ...(params.userId && { userId: params.userId }),
     ...(params.brandId && { brandId: params.brandId }),
     ...(params.campaignId && { campaignId: params.campaignId }),
-    serviceName: "reply-qualification-service",
-    taskName: "qualify-reply",
+    serviceName: "replies-service",
+    taskName: "replies-service",
     ...(params.parentRunId && { parentRunId: params.parentRunId }),
+    ...(params.metadata && { metadata: params.metadata }),
   });
-}
-
-export async function addCosts(
-  runId: string,
-  items: { costName: string; costSource: "platform" | "org"; quantity: number }[]
-): Promise<{ costs: RunsServiceCost[] }> {
-  return runsApiFetch<{ costs: RunsServiceCost[] }>(
-    "POST",
-    `/v1/runs/${runId}/costs`,
-    { items }
-  );
 }
 
 export async function updateRunStatus(
