@@ -51,7 +51,7 @@ export const HealthDebugResponseSchema = z
     apiKeyConfigured: z.boolean(),
     apiKeyLength: z.number(),
     apiKeyPrefix: z.string(),
-    keyServiceConfigured: z.boolean(),
+    chatServiceConfigured: z.boolean(),
     dbUrlConfigured: z.boolean(),
     dbStatus: z.string(),
   })
@@ -86,8 +86,6 @@ export const QualifyResponseSchema = z
     reasoning: z.string().nullable(),
     suggestedAction: z.string().nullable(),
     extractedDetails: z.record(z.string(), z.unknown()).nullable(),
-    costUsd: z.number(),
-    keySource: CostSourceSchema.optional(),
     serviceRunId: z.string().uuid().nullable().optional(),
     createdAt: z.string().or(z.date()),
   })

@@ -68,7 +68,7 @@ export const qualifications = pgTable("qualifications", {
   extractedDetails: jsonb("extracted_details"), // { meeting_time: "...", phone: "...", etc. }
   
   // Model info for tracking costs
-  model: text("model").notNull().default("claude-3-haiku-20240307"),
+  model: text("model").notNull().default("gemini-flash-lite"),
   inputTokens: decimal("input_tokens", { precision: 10, scale: 0 }),
   outputTokens: decimal("output_tokens", { precision: 10, scale: 0 }),
   costUsd: decimal("cost_usd", { precision: 10, scale: 6 }),

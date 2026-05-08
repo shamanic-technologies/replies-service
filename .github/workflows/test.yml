@@ -2,9 +2,9 @@ name: Test
 
 on:
   push:
-    branches: [main]
+    branches: [main, staging]
   pull_request:
-    branches: [main]
+    branches: [main, staging]
 
 concurrency:
   group: integration-tests
@@ -25,7 +25,10 @@ jobs:
         run: npm run test:unit
         env:
           REPLY_QUALIFICATION_SERVICE_API_KEY: test-api-key
-          ANTHROPIC_API_KEY: test-anthropic-key
+          CHAT_SERVICE_URL: https://chat.test.local
+          CHAT_SERVICE_API_KEY: test-chat-key
+          RUNS_SERVICE_URL: https://runs.test.local
+          RUNS_SERVICE_API_KEY: test-runs-key
 
   test-integration:
     runs-on: ubuntu-latest
@@ -66,4 +69,7 @@ jobs:
         env:
           REPLY_QUALIFICATION_SERVICE_DATABASE_URL: ${{ env.DB_URL }}
           REPLY_QUALIFICATION_SERVICE_API_KEY: test-api-key
-          ANTHROPIC_API_KEY: test-anthropic-key
+          CHAT_SERVICE_URL: https://chat.test.local
+          CHAT_SERVICE_API_KEY: test-chat-key
+          RUNS_SERVICE_URL: https://runs.test.local
+          RUNS_SERVICE_API_KEY: test-runs-key

@@ -2,10 +2,9 @@ import { Router } from "express";
 import { db } from "../db/index.js";
 import { qualificationRequests, qualifications } from "../db/schema.js";
 import { serviceAuth, AuthenticatedRequest } from "../middleware/auth.js";
-import { qualifyReply } from "../lib/anthropic.js";
-import { createRun, addCosts, updateRunStatus } from "../lib/runs-service.js";
-import { resolveAnthropicKey } from "../lib/key-service.js";
-import { eq } from "drizzle-orm";
+import { qualifyReply } from "../lib/chat-client.js";
+import { createRun, updateRunStatus } from "../lib/runs-service.js";
+import { and, eq } from "drizzle-orm";
 import {
   QualifyRequestSchema,
   QualificationsQuerySchema,
@@ -14,9 +13,9 @@ import {
 const router = Router();
 
 /**
- * POST /qualify - Qualify an email reply using AI
+ * POST /qualify - Qualify an email reply via chat-service.
  *
- * Identity (orgId, userId) comes from x-org-id / x-user-id headers.
+ * Identity (orgId, userId, runId) comes from x-org-id / x-user-id / x-run-id headers.
  */
 router.post("/qualify", serviceAuth, async (req: AuthenticatedRequest, res) => {
   try {
@@ -33,22 +32,17 @@ router.post("/qualify", serviceAuth, async (req: AuthenticatedRequest, res) => {
     const userId = req.userId!;
     const callerRunId = req.runId!;
 
-    // Create a run in RunsService (caller's runId becomes parentRunId)
-    let serviceRunId: string | null = null;
-    try {
-      const run = await createRun({
-        orgId,
-        userId,
-        brandId: body.brandId,
-        campaignId: body.campaignId,
-        parentRunId: callerRunId,
-      });
-      serviceRunId = run.id;
-    } catch (err) {
-      console.error("RunsService createRun failed:", err);
-    }
+    // Create our own run, child of caller's run.
+    const run = await createRun({
+      orgId,
+      userId,
+      brandId: body.brandId,
+      campaignId: body.campaignId,
+      parentRunId: callerRunId,
+    });
+    const serviceRunId = run.id;
 
-    // Store the request
+    // Persist the request row.
     const [request] = await db
       .insert(qualificationRequests)
       .values({
@@ -73,77 +67,31 @@ router.post("/qualify", serviceAuth, async (req: AuthenticatedRequest, res) => {
       })
       .returning();
 
-    // Resolve Anthropic API key from key-service
-    let anthropicApiKey: string;
-    let keySource: "platform" | "org";
-    try {
-      const resolved = await resolveAnthropicKey({
-        orgId,
-        userId,
-        callerContext: {
-          callerService: "reply-qualification-service",
-          callerMethod: "POST",
-          callerPath: "/qualify",
-        },
-      });
-      anthropicApiKey = resolved.apiKey;
-      keySource = resolved.keySource;
-    } catch (err) {
-      console.error("Key resolution failed:", err);
-      if (serviceRunId) {
-        updateRunStatus(serviceRunId, "failed").catch((e) =>
-          console.error("RunsService updateRunStatus failed:", e)
-        );
-      }
-      return res.status(502).json({ error: "Failed to resolve API key from key-service" });
-    }
-
-    // Run AI qualification
     let result;
     try {
       result = await qualifyReply({
         subject: body.subject || null,
         bodyText: body.bodyText || null,
         bodyHtml: body.bodyHtml || null,
-        anthropicApiKey,
-        keySource,
+        identity: {
+          orgId,
+          userId,
+          runId: serviceRunId,
+          brandId: body.brandId,
+          campaignId: body.campaignId,
+        },
       });
     } catch (error) {
-      // Mark run as failed in RunsService
-      if (serviceRunId) {
-        updateRunStatus(serviceRunId, "failed").catch((err) =>
-          console.error("RunsService updateRunStatus failed:", err)
-        );
-      }
+      await updateRunStatus(serviceRunId, "failed").catch((err) =>
+        console.error("[reply-qualification-service] updateRunStatus failed:", err),
+      );
       throw error;
     }
 
-    // Log costs to RunsService with costSource
-    if (serviceRunId) {
-      try {
-        await addCosts(serviceRunId, [
-          {
-            costName: "anthropic-haiku-4.5-tokens-input",
-            costSource: keySource,
-            quantity: result.inputTokens,
-          },
-          {
-            costName: "anthropic-haiku-4.5-tokens-output",
-            costSource: keySource,
-            quantity: result.outputTokens,
-          },
-        ]);
-      } catch (err) {
-        console.error("RunsService addCosts failed:", err);
-      }
+    await updateRunStatus(serviceRunId, "completed").catch((err) =>
+      console.error("[reply-qualification-service] updateRunStatus failed:", err),
+    );
 
-      // Mark run as completed
-      updateRunStatus(serviceRunId, "completed").catch((err) =>
-        console.error("RunsService updateRunStatus failed:", err)
-      );
-    }
-
-    // Store the qualification
     const [qualification] = await db
       .insert(qualifications)
       .values({
@@ -153,10 +101,9 @@ router.post("/qualify", serviceAuth, async (req: AuthenticatedRequest, res) => {
         reasoning: result.reasoning,
         suggestedAction: result.suggestedAction,
         extractedDetails: result.extractedDetails,
-        model: "claude-3-haiku-20240307",
+        model: result.model,
         inputTokens: String(result.inputTokens),
         outputTokens: String(result.outputTokens),
-        costUsd: String(result.costUsd),
         responseRaw: result.responseRaw,
       })
       .returning();
@@ -169,19 +116,17 @@ router.post("/qualify", serviceAuth, async (req: AuthenticatedRequest, res) => {
       reasoning: qualification.reasoning,
       suggestedAction: qualification.suggestedAction,
       extractedDetails: qualification.extractedDetails,
-      costUsd: parseFloat(String(qualification.costUsd)),
-      keySource: result.keySource,
       serviceRunId,
       createdAt: qualification.createdAt,
     });
   } catch (error) {
-    console.error("Qualify error:", error);
+    console.error("[reply-qualification-service] /qualify error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
 
 /**
- * GET /qualifications/:id - Get a specific qualification by ID
+ * GET /qualifications/:id - Get a qualification by ID, scoped to caller's org.
  */
 router.get(
   "/qualifications/:id",
@@ -189,35 +134,47 @@ router.get(
   async (req: AuthenticatedRequest, res) => {
     try {
       const { id } = req.params;
+      const orgId = req.orgId!;
 
-      const qualification = await db.query.qualifications.findFirst({
-        where: eq(qualifications.id, id),
-      });
+      const row = await db
+        .select({ qualification: qualifications, request: qualificationRequests })
+        .from(qualifications)
+        .innerJoin(
+          qualificationRequests,
+          eq(qualifications.requestId, qualificationRequests.id),
+        )
+        .where(
+          and(
+            eq(qualifications.id, id),
+            eq(qualificationRequests.orgId, orgId),
+          ),
+        )
+        .limit(1);
 
-      if (!qualification) {
+      if (row.length === 0) {
         return res.status(404).json({ error: "Qualification not found" });
       }
 
+      const q = row[0].qualification;
       res.json({
-        id: qualification.id,
-        requestId: qualification.requestId,
-        classification: qualification.classification,
-        confidence: parseFloat(String(qualification.confidence)),
-        reasoning: qualification.reasoning,
-        suggestedAction: qualification.suggestedAction,
-        extractedDetails: qualification.extractedDetails,
-        costUsd: parseFloat(String(qualification.costUsd || 0)),
-        createdAt: qualification.createdAt,
+        id: q.id,
+        requestId: q.requestId,
+        classification: q.classification,
+        confidence: parseFloat(String(q.confidence)),
+        reasoning: q.reasoning,
+        suggestedAction: q.suggestedAction,
+        extractedDetails: q.extractedDetails,
+        createdAt: q.createdAt,
       });
     } catch (error) {
-      console.error("Get qualification error:", error);
+      console.error("[reply-qualification-service] get qualification error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
-  }
+  },
 );
 
 /**
- * GET /qualifications - List qualifications with filters
+ * GET /qualifications - List qualifications for the caller's org.
  */
 router.get(
   "/qualifications",
@@ -228,8 +185,13 @@ router.get(
       const { sourceOrgId, limit = "50" } = parsed.success
         ? parsed.data
         : (req.query as Record<string, string>);
+      const orgId = req.orgId!;
 
-      // Build query with joins
+      const conditions = [eq(qualificationRequests.orgId, orgId)];
+      if (sourceOrgId) {
+        conditions.push(eq(qualificationRequests.sourceOrgId, String(sourceOrgId)));
+      }
+
       const results = await db
         .select({
           qualification: qualifications,
@@ -238,13 +200,9 @@ router.get(
         .from(qualifications)
         .innerJoin(
           qualificationRequests,
-          eq(qualifications.requestId, qualificationRequests.id)
+          eq(qualifications.requestId, qualificationRequests.id),
         )
-        .where(
-          sourceOrgId
-            ? eq(qualificationRequests.sourceOrgId, String(sourceOrgId))
-            : undefined
-        )
+        .where(and(...conditions))
         .limit(parseInt(String(limit)))
         .orderBy(qualifications.createdAt);
 
@@ -261,13 +219,13 @@ router.get(
           confidence: parseFloat(String(r.qualification.confidence)),
           suggestedAction: r.qualification.suggestedAction,
           createdAt: r.qualification.createdAt,
-        }))
+        })),
       );
     } catch (error) {
-      console.error("List qualifications error:", error);
+      console.error("[reply-qualification-service] list qualifications error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
-  }
+  },
 );
 
 export default router;
