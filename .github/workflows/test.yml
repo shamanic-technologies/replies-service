@@ -55,6 +55,21 @@ jobs:
             echo "DB_URL=${{ secrets.REPLIES_SERVICE_DATABASE_URL_DEV }}" >> "$GITHUB_ENV"
           fi
 
+      - name: Drop legacy schema (Neon branch may have inherited old objects)
+        run: |
+          psql "$DB_URL" <<'SQL'
+          DROP TABLE IF EXISTS "webhook_callbacks" CASCADE;
+          DROP TABLE IF EXISTS "qualifications" CASCADE;
+          DROP TABLE IF EXISTS "qualification_requests" CASCADE;
+          DROP TABLE IF EXISTS "tasks_runs_costs" CASCADE;
+          DROP TABLE IF EXISTS "tasks_runs" CASCADE;
+          DROP TABLE IF EXISTS "tasks" CASCADE;
+          DROP TABLE IF EXISTS "users" CASCADE;
+          DROP TABLE IF EXISTS "orgs" CASCADE;
+          DROP TYPE IF EXISTS "classification";
+          DROP TABLE IF EXISTS "drizzle"."__drizzle_migrations";
+          SQL
+
       - name: Push schema to branch
         run: npx drizzle-kit push --force
         env:
