@@ -1,13 +1,13 @@
 const RUNS_SERVICE_URL =
-  process.env.RUNS_SERVICE_URL || "https://runs.mcpfactory.org";
-const RUNS_SERVICE_API_KEY = process.env.RUNS_SERVICE_API_KEY;
+  process.env.RUNS_SERVICE_URL || "http://runs-service.railway.internal:8080";
 
 async function runsApiFetch<T>(
   method: string,
   path: string,
-  body?: unknown
+  body?: unknown,
 ): Promise<T> {
-  if (!RUNS_SERVICE_API_KEY) {
+  const apiKey = process.env.RUNS_SERVICE_API_KEY;
+  if (!apiKey) {
     throw new Error("RUNS_SERVICE_API_KEY is not set");
   }
 
@@ -15,7 +15,7 @@ async function runsApiFetch<T>(
     method,
     headers: {
       "Content-Type": "application/json",
-      "X-API-Key": RUNS_SERVICE_API_KEY,
+      "X-API-Key": apiKey,
     },
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
@@ -28,13 +28,10 @@ async function runsApiFetch<T>(
   return res.json() as Promise<T>;
 }
 
-// --- Types ---
-
 export interface RunsServiceRun {
   id: string;
   organizationId: string;
   userId: string | null;
-  appId: string;
   brandId: string | null;
   campaignId: string | null;
   serviceName: string;
@@ -47,20 +44,6 @@ export interface RunsServiceRun {
   updatedAt: string;
 }
 
-export interface RunsServiceCost {
-  id: string;
-  runId: string;
-  costName: string;
-  costSource: "platform" | "org";
-  quantity: string;
-  unitCostInUsdCents: string;
-  totalCostInUsdCents: string;
-  status: string;
-  createdAt: string;
-}
-
-// --- API functions ---
-
 export interface CreateRunParams {
   orgId: string;
   userId: string;
@@ -70,7 +53,7 @@ export interface CreateRunParams {
 }
 
 export async function createRun(
-  params: CreateRunParams
+  params: CreateRunParams,
 ): Promise<RunsServiceRun> {
   return runsApiFetch<RunsServiceRun>("POST", "/v1/runs", {
     orgId: params.orgId,
@@ -84,20 +67,9 @@ export async function createRun(
   });
 }
 
-export async function addCosts(
-  runId: string,
-  items: { costName: string; costSource: "platform" | "org"; quantity: number }[]
-): Promise<{ costs: RunsServiceCost[] }> {
-  return runsApiFetch<{ costs: RunsServiceCost[] }>(
-    "POST",
-    `/v1/runs/${runId}/costs`,
-    { items }
-  );
-}
-
 export async function updateRunStatus(
   runId: string,
-  status: "completed" | "failed"
+  status: "completed" | "failed",
 ): Promise<RunsServiceRun> {
   return runsApiFetch<RunsServiceRun>("PATCH", `/v1/runs/${runId}`, {
     status,

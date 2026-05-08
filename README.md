@@ -1,6 +1,6 @@
 # Reply Qualification Service
 
-AI-powered email reply classification service. Analyzes incoming email replies to sales/outreach campaigns using Claude AI and classifies them into actionable categories.
+AI-powered email reply classification service. Analyzes incoming email replies to sales/outreach campaigns using Gemini (via chat-service) and classifies them into actionable categories.
 
 ## API Endpoints
 
@@ -46,20 +46,20 @@ Classify an email reply. Stores the request, runs AI classification, returns the
   "reasoning": "The person explicitly asked to schedule a call",
   "suggestedAction": "forward_to_client",
   "extractedDetails": { "meeting_preference": "Tuesday afternoon" },
-  "costUsd": 0.000123,
-  "keySource": "platform",
   "serviceRunId": "uuid-or-null",
   "createdAt": "2025-01-01T00:00:00.000Z"
 }
 ```
 
+LLM input/output token counts and cost are not returned in the response — they are logged on the chat-service child run (linked via `serviceRunId`).
+
 ### `GET /qualifications/:id`
 
-Fetch a specific qualification result by ID.
+Fetch a specific qualification result by ID. Scoped to the caller's `x-org-id` — returns 404 for qualifications belonging to other orgs.
 
 ### `GET /qualifications`
 
-List qualifications with optional filters: `sourceService`, `sourceOrgId`, `sourceRefId`, `limit` (default 50).
+List qualifications scoped to the caller's `x-org-id`. Optional filters: `sourceOrgId`, `limit` (default 50).
 
 ### `GET /stats`
 
@@ -85,11 +85,13 @@ Aggregated qualification statistics. **At least one filter parameter is required
     "interested": 200,
     "not_interested": 500
   },
-  "totalCostUsd": 1.234567,
+  "totalCostUsd": 0,
   "totalInputTokens": 500000,
   "totalOutputTokens": 125000
 }
 ```
+
+Note: `totalCostUsd` is no longer populated by this service since LLM costs are logged on chat-service child runs. Aggregate costs via runs-service `GET /v1/stats/costs`. Token counters remain as a per-service snapshot.
 
 ### `GET /openapi.json`
 
@@ -129,12 +131,12 @@ npm run dev
 | Variable | Description |
 |---|---|
 | `REPLY_QUALIFICATION_SERVICE_DATABASE_URL` | Neon PostgreSQL connection string |
-| `KEY_SERVICE_URL` | Key-service base URL (default: `https://keys.mcpfactory.org`) |
-| `KEY_SERVICE_API_KEY` | API key for key-service |
 | `REPLY_QUALIFICATION_SERVICE_API_KEY` | Service-to-service auth key |
-| `RUNS_SERVICE_URL` | RunsService base URL (default: `https://runs.mcpfactory.org`) |
-| `RUNS_SERVICE_API_KEY` | API key for RunsService |
-| `SERVICE_URL` | Public URL for OpenAPI spec (e.g. `https://reply-qualification.mcpfactory.org`) |
+| `CHAT_SERVICE_URL` | chat-service base URL (default: `http://chat-service.railway.internal:8080`) |
+| `CHAT_SERVICE_API_KEY` | API key for chat-service |
+| `RUNS_SERVICE_URL` | runs-service base URL (default: `http://runs-service.railway.internal:8080`) |
+| `RUNS_SERVICE_API_KEY` | API key for runs-service |
+| `SERVICE_URL` | Public URL for OpenAPI spec |
 | `PORT` | Server port (default: 3000) |
 
 ## Database
@@ -143,7 +145,7 @@ Uses Drizzle ORM with PostgreSQL (Neon). Migrations run automatically on startup
 
 **Tables:** `qualification_requests`, `qualifications`, `webhook_callbacks`
 
-Run tracking and cost logging are delegated to [RunsService](https://runs.mcpfactory.org) — the `serviceRunId` column in `qualification_requests` links back to the external run.
+Run tracking is delegated to runs-service — the `serviceRunId` column in `qualification_requests` links back to the external run. LLM token costs are logged on the chat-service child run, not on this service's run.
 
 ```bash
 npm run db:generate   # Generate migrations from schema changes
@@ -151,17 +153,14 @@ npm run db:migrate    # Run migrations
 npm run db:studio     # Open Drizzle Studio
 ```
 
-## Key Resolution
+## LLM Calls
 
-API keys are resolved automatically through key-service at runtime:
+This service does not call LLM providers directly. All classification calls go through `POST /complete` on chat-service with `provider: "google"` and `model: "flash-lite"`. chat-service:
+- Resolves the Google API key from key-service (org or platform, based on org preference).
+- Creates a child run under our `serviceRunId` and logs LLM token costs there.
+- Returns the parsed JSON classification.
 
-```
-GET /keys/anthropic/decrypt?orgId=<orgId>&userId=<userId>
-```
-
-key-service auto-resolves whether to use the org's own key or the platform key based on the org's preference. The response includes a `keySource` field (`"platform"` or `"org"`) indicating which key was used. This `keySource` value is passed as `costSource` when declaring costs to runs-service.
-
-No raw API keys are sent in request bodies. No `appId` or `keySource` fields are needed in requests.
+No LLM provider keys, raw API keys, or cost calculations live in this service.
 
 ## Auth
 
@@ -175,7 +174,7 @@ Optionally pass `X-Source-Service` to identify the calling service.
 
 ## AI Model
 
-Uses Claude 3 Haiku (`claude-3-haiku-20240307`) for cost-effective classification. Pricing: $0.25/1M input tokens, $1.25/1M output tokens.
+Uses Gemini Flash-Lite (resolved by chat-service from the `flash-lite` alias) for cost-effective classification. Cost is logged on the chat-service child run under each `serviceRunId`.
 
 ## Testing
 
@@ -213,8 +212,8 @@ docker run -p 3000:3000 --env-file .env reply-qualification-service
 - **Runtime:** Node 20, TypeScript (strict mode)
 - **Framework:** Express 4
 - **ORM:** Drizzle ORM + PostgreSQL (Neon)
-- **AI:** Anthropic Claude 3 Haiku (keys resolved via key-service)
-- **Key Management:** key-service (auto-resolves org vs platform keys)
+- **LLM:** Gemini `flash-lite` via chat-service (provider+model resolved internally)
+- **Run Tracking:** runs-service (parent run created here; chat-service creates a child run for the LLM call and logs costs there)
 - **Testing:** Vitest + Supertest
 - **Validation:** Zod + `@asteasolutions/zod-to-openapi`
-- **CI:** GitHub Actions (unit + integration tests on push/PR to main)
+- **CI:** GitHub Actions (unit + integration tests on push/PR to main and staging)

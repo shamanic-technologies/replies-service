@@ -14,8 +14,8 @@ router.get("/health", (_req, res) => {
 
 router.get("/health/debug", async (_req, res) => {
   const apiKey = process.env.REPLY_QUALIFICATION_SERVICE_API_KEY;
-  const keyServiceUrl = process.env.KEY_SERVICE_URL;
-  const keyServiceApiKey = process.env.KEY_SERVICE_API_KEY;
+  const chatServiceUrl = process.env.CHAT_SERVICE_URL;
+  const chatServiceApiKey = process.env.CHAT_SERVICE_API_KEY;
   const dbUrl = process.env.REPLY_QUALIFICATION_SERVICE_DATABASE_URL;
 
   let dbStatus = "unknown";
@@ -30,7 +30,7 @@ router.get("/health/debug", async (_req, res) => {
     apiKeyConfigured: !!apiKey,
     apiKeyLength: apiKey?.length || 0,
     apiKeyPrefix: apiKey?.substring(0, 4) || "none",
-    keyServiceConfigured: !!keyServiceUrl && !!keyServiceApiKey,
+    chatServiceConfigured: !!chatServiceUrl && !!chatServiceApiKey,
     dbUrlConfigured: !!dbUrl,
     dbStatus,
   });

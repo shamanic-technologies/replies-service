@@ -1,0 +1,1 @@
+ALTER TABLE "qualifications" ALTER COLUMN "model" SET DEFAULT 'gemini-flash-lite';

@@ -4,9 +4,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 vi.stubEnv("RUNS_SERVICE_URL", "https://runs.test.local");
 vi.stubEnv("RUNS_SERVICE_API_KEY", "test-key");
 
-const { createRun, addCosts, updateRunStatus } = await import(
-  "../../src/lib/runs-service.js"
-);
+const runsModule = await import("../../src/lib/runs-service.js");
+const { createRun, updateRunStatus } = runsModule;
 
 describe("RunsService client", () => {
   const fetchSpy = vi.fn();
@@ -79,43 +78,8 @@ describe("RunsService client", () => {
     expect(body).not.toHaveProperty("parentRunId");
   });
 
-  it("should add costs with costSource to a run", async () => {
-    const fakeCosts = { costs: [{ id: "cost-1", costName: "test", costSource: "platform" }] };
-    fetchSpy.mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve(fakeCosts),
-    });
-
-    const result = await addCosts("run-123", [
-      { costName: "anthropic-haiku-4.5-tokens-input", costSource: "platform", quantity: 150 },
-      { costName: "anthropic-haiku-4.5-tokens-output", costSource: "platform", quantity: 50 },
-    ]);
-
-    expect(result).toEqual(fakeCosts);
-    const [url, opts] = fetchSpy.mock.calls[0];
-    expect(url).toBe("https://runs.test.local/v1/runs/run-123/costs");
-    expect(opts.method).toBe("POST");
-
-    const body = JSON.parse(opts.body);
-    expect(body.items).toHaveLength(2);
-    expect(body.items[0].costName).toBe("anthropic-haiku-4.5-tokens-input");
-    expect(body.items[0].costSource).toBe("platform");
-    expect(body.items[0].quantity).toBe(150);
-    expect(body.items[1].costSource).toBe("platform");
-  });
-
-  it("should pass org costSource when using org key", async () => {
-    fetchSpy.mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ costs: [] }),
-    });
-
-    await addCosts("run-123", [
-      { costName: "anthropic-haiku-4.5-tokens-input", costSource: "org", quantity: 100 },
-    ]);
-
-    const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
-    expect(body.items[0].costSource).toBe("org");
+  it("regression: addCosts is no longer exported (chat-service handles LLM costs)", () => {
+    expect((runsModule as any).addCosts).toBeUndefined();
   });
 
   it("should update run status", async () => {
