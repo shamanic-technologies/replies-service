@@ -81,7 +81,6 @@ describe("POST /qualify", () => {
 
   afterAll(async () => {
     await cleanTestData();
-    await closeDb();
   });
 
   it("happy path: stores request + qualification, returns 200", async () => {
