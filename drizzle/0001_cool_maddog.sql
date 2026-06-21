@@ -1,0 +1,1 @@
+ALTER TABLE "journalist_replies" ADD COLUMN "audience_id" text;

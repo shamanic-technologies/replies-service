@@ -36,6 +36,7 @@ export interface RunsServiceRun {
   userId: string | null;
   brandId: string | null;
   campaignId: string | null;
+  audienceId: string | null;
   serviceName: string;
   taskName: string;
   status: string;
@@ -51,6 +52,7 @@ export interface CreateRunParams {
   userId?: string;
   brandId?: string;
   campaignId?: string;
+  audienceId?: string;
   parentRunId?: string;
   metadata?: Record<string, unknown>;
 }
@@ -63,6 +65,7 @@ export async function createRun(
     ...(params.userId && { userId: params.userId }),
     ...(params.brandId && { brandId: params.brandId }),
     ...(params.campaignId && { campaignId: params.campaignId }),
+    ...(params.audienceId && { audienceId: params.audienceId }),
     serviceName: "replies-service",
     taskName: "replies-service",
     ...(params.parentRunId && { parentRunId: params.parentRunId }),

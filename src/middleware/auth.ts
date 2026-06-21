@@ -10,6 +10,8 @@ export interface AuthenticatedRequest extends Request {
   userId?: string;
   brandId?: string;
   campaignId?: string;
+  /** Audience attribution ID from inbound x-audience-id header (cost attribution). */
+  audienceId?: string;
   featureSlug?: string;
   workflowSlug?: string;
 }
@@ -64,6 +66,7 @@ export function requireOrgId(
   req.parentRunId = (req.headers["x-run-id"] as string) || undefined;
   req.brandId = (req.headers["x-brand-id"] as string) || undefined;
   req.campaignId = (req.headers["x-campaign-id"] as string) || undefined;
+  req.audienceId = (req.headers["x-audience-id"] as string) || undefined;
   req.featureSlug = (req.headers["x-feature-slug"] as string) || undefined;
   req.workflowSlug = (req.headers["x-workflow-slug"] as string) || undefined;
 
@@ -73,6 +76,7 @@ export function requireOrgId(
     userId: req.userId,
     brandId: req.brandId,
     campaignId: req.campaignId,
+    audienceId: req.audienceId,
     parentRunId: req.parentRunId,
     metadata: {
       route: req.path,

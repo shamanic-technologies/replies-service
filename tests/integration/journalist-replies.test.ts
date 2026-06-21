@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
 import request from "supertest";
+import { eq } from "drizzle-orm";
 
 // Mock runs-service so middleware run lifecycle is observable.
 const createRunMock = vi.fn();
@@ -142,6 +143,43 @@ describe("POST /orgs/journalist-replies", () => {
     expect(updateRunStatusMock).toHaveBeenCalledWith(
       RUN_ID_FROM_MIDDLEWARE,
       "completed"
+    );
+  });
+});
+
+describe("regression: x-audience-id cost attribution propagation", () => {
+  const AUDIENCE_ID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+
+  it("forwards inbound x-audience-id to runs-service createRun (egress) and tags the persisted row", async () => {
+    const res = await request(app)
+      .post("/orgs/journalist-replies")
+      .set(getAuthHeaders({ "x-audience-id": AUDIENCE_ID }))
+      .send(MINIMAL_BODY);
+
+    expect(res.status).toBe(201);
+    // egress: audienceId reaches the runs-service run declaration
+    expect(createRunMock).toHaveBeenCalledWith(
+      expect.objectContaining({ audienceId: AUDIENCE_ID })
+    );
+    // own DB row tagged + serialized
+    expect(res.body.audienceId).toBe(AUDIENCE_ID);
+    const [persisted] = await db
+      .select()
+      .from(journalistReplies)
+      .where(eq(journalistReplies.id, res.body.id));
+    expect(persisted.audienceId).toBe(AUDIENCE_ID);
+  });
+
+  it("omits audienceId when x-audience-id header is absent (no throw, null row)", async () => {
+    const res = await request(app)
+      .post("/orgs/journalist-replies")
+      .set(getAuthHeaders())
+      .send(MINIMAL_BODY);
+
+    expect(res.status).toBe(201);
+    expect(res.body.audienceId).toBeNull();
+    expect(createRunMock).toHaveBeenCalledWith(
+      expect.objectContaining({ audienceId: undefined })
     );
   });
 });

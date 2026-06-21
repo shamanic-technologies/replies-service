@@ -14,10 +14,11 @@ All `/orgs/*` endpoints require:
 | `x-run-id` | No | Caller's run ID. Stored as `parent_run_id` |
 | `x-brand-id` | No | Brand UUID(s) |
 | `x-campaign-id` | No | Campaign UUID |
+| `x-audience-id` | No | Audience attribution UUID. Stored as `audience_id` and forwarded to the runs-service run for per-audience cost attribution |
 | `x-feature-slug` | No | Feature identifier |
 | `x-workflow-slug` | No | Workflow identifier |
 
-The service creates its own run via runs-service for every authenticated request, stored as `run_id`.
+The service creates its own run via runs-service for every authenticated request, stored as `run_id`. When present, `x-audience-id` is included in that run declaration (`audienceId`) and persisted on the reply row (`audience_id`) so runs-service can attribute campaign cost per audience.
 
 ### `POST /orgs/journalist-replies`
 
