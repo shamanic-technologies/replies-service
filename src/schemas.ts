@@ -98,6 +98,7 @@ export const JournalistReplyResponseSchema = z
     userId: z.string().nullable(),
     parentRunId: z.string().nullable(),
     runId: z.string().nullable(),
+    audienceId: z.string().nullable(),
     status: JournalistReplyStatusSchema,
     source: JournalistReplySourceSchema,
     setByUserId: z.string().nullable(),

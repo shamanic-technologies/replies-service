@@ -29,6 +29,7 @@ export const journalistReplies = pgTable(
     userId: text("user_id"),
     parentRunId: text("parent_run_id"),
     runId: text("run_id"),
+    audienceId: text("audience_id"),
     status: journalistReplyStatusEnum("status").notNull(),
     source: journalistReplySourceEnum("source").notNull(),
     setByUserId: text("set_by_user_id"),
