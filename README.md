@@ -101,7 +101,7 @@ npm run dev
 
 | Variable | Description |
 |---|---|
-| `REPLIES_SERVICE_DATABASE_URL` | Neon Postgres connection string |
+| `REPLIES_SERVICE_DATABASE_URL` | Postgres connection string |
 | `REPLIES_SERVICE_API_KEY` | Service-to-service auth key (crashes at startup if absent) |
 | `RUNS_SERVICE_URL` | Runs-service base URL (default `https://runs.mcpfactory.org`) |
 | `RUNS_SERVICE_API_KEY` | Runs-service API key |
@@ -127,13 +127,15 @@ npm run test:unit         # unit only (no DB)
 npm run test:integration  # integration (needs DB)
 ```
 
-Integration tests run against a Neon branch in CI (`pr-<number>`). Locally, point `REPLIES_SERVICE_DATABASE_URL` at any Postgres and run `drizzle-kit push --force`.
+In CI, integration tests run against a `postgres:16` service container created for that job and destroyed with it — one database per run, shared with nothing. Its schema is built by replaying the drizzle journal (`scripts/ci-migrate.ts`, the same migrator the service runs at boot), then checked against `src/db/schema.ts`: if the two have drifted, the job fails and asks for `npm run db:generate`.
+
+Locally, point `REPLIES_SERVICE_DATABASE_URL` at any Postgres and run `npm run db:migrate`.
 
 ## Tech stack
 
 - Node 20, TypeScript strict
 - Express 4
-- Drizzle ORM + Postgres (Neon)
+- Drizzle ORM + Postgres
 - Vitest + Supertest
 - Zod + `@asteasolutions/zod-to-openapi`
 - runs-service for run lifecycle + cost tracking

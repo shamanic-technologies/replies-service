@@ -29,6 +29,7 @@ AI-powered email reply classification service. Uses Claude AI to classify incomi
 - `src/middleware/auth.ts` — API key authentication middleware
 - `src/config.ts` — Environment config
 - `src/index.ts` — Express app entrypoint
+- `scripts/ci-migrate.ts` — replays the drizzle journal onto CI's throwaway Postgres container (same migrator as boot)
 - `tests/unit/` — Unit tests
 - `tests/integration/` — Integration tests
 - `openapi.json` — Auto-generated, do NOT edit manually
